@@ -28,23 +28,25 @@ type DBName = Text
 data DBCommandVersion = V1
   deriving (Generic, Show, ToJSON, FromJSON)
 
-getCreateQuery :: (ToJSON (table Identity)) => Text -> DBCommandVersion -> Tag -> Double -> DBName -> table Identity -> A.Value
-getCreateQuery model cmdVersion tag timestamp dbName dbObject = A.object
+getCreateQuery :: (ToJSON (table Identity)) => Text -> DBCommandVersion -> Tag -> Double -> DBName -> table Identity -> [(String, String)] -> A.Value
+getCreateQuery model cmdVersion tag timestamp dbName dbObject mappings = do
+  A.object
     [ "contents" .= A.toJSON
         [ A.toJSON cmdVersion
         , A.toJSON tag
         , A.toJSON timestamp
         , A.toJSON dbName
         , A.object
-            [ "contents" .= dbObject,
+            [ "contents" .= toJSON dbObject,
+              "mappings" .= A.toJSON (HM.fromList mappings),
               "tag" .= ((T.pack . pascal . T.unpack) model <> "Object")
             ]
         ]
     , "tag" .= ("Create" :: Text)
     ]
 -- | This will take updateCommand from getDbUpdateCommandJson and returns Aeson value of Update DBCommand
-getUpdateQuery :: DBCommandVersion -> Tag -> Double -> DBName -> A.Value -> A.Value
-getUpdateQuery cmdVersion tag timestamp dbName updateCommand = A.object
+getUpdateQuery :: DBCommandVersion -> Tag -> Double -> DBName -> A.Value -> [(String, String)] -> A.Value
+getUpdateQuery cmdVersion tag timestamp dbName updateCommand mappings = A.object
     [ "contents" .= A.toJSON
         [ A.toJSON cmdVersion
         , A.toJSON tag
@@ -52,6 +54,7 @@ getUpdateQuery cmdVersion tag timestamp dbName updateCommand = A.object
         , A.toJSON dbName
         , updateCommand
         ]
+    , "mappings".= HM.fromList mappings
     , "tag" .= ("Update" :: Text)
     ]
 
@@ -61,6 +64,7 @@ getDbUpdateCommandJson model upd whereClause = A.object
       [ updValToJSON . (toPSJSON @be @table) <$> upd
       , [whereClauseToJson whereClause]
       ]
+  , "updates" .= (HM.fromList upd)
   , "tag" .= ((T.pack . pascal . T.unpack) model <> "Options")
   ]
 
@@ -70,6 +74,7 @@ getDbUpdateCommandJsonWithPrimaryKey model upd table whereClause = A.object
       [ updValToJSON . (toPSJSON @be @table) <$> upd
       , [(whereClauseJsonWithPrimaryKey @be) table $ whereClauseToJson whereClause]
       ]
+  , "updates" .= (HM.fromList upd)
   , "tag" .= ((T.pack . pascal . T.unpack) model <> "Options")
   ]
 
