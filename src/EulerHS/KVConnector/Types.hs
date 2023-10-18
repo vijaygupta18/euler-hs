@@ -13,7 +13,7 @@
 module EulerHS.KVConnector.Types 
   (
     module EulerHS.KVConnector.Types,
-    MeshError(..)
+    MeshError(..), TableMappings(..) 
   ) where
 
 import EulerHS.Prelude
@@ -32,7 +32,6 @@ import           Database.Beam.Schema (FieldModification, TableField)
 import           Sequelize (Column, Set)
 import qualified EulerHS.Types as T
 import           Data.Aeson ((.=))
-
 ------------ TYPES AND CLASSES ------------
 
 data PrimaryKey = PKey [(Text,Text)]
@@ -43,6 +42,24 @@ class KVConnector table where
   keyMap :: HM.HashMap Text Bool -- True implies it is primary key and False implies secondary
   primaryKey :: table -> PrimaryKey
   secondaryKeys:: table -> [SecondaryKey]
+
+
+  ----------------------------------------------
+
+class TableMappings a where
+  getTableMappings :: [(String,String)]
+
+-- updateKey :: Text -> Text -> A.Value -> A.Value
+-- updateKey oldKey newKey (A.Object obj) =
+--   case HM.lookup oldKey obj of
+--     Just value ->
+--       A.Object $ HM.insert newKey value (HM.delete oldKey obj)
+--     Nothing -> A.Object obj
+-- renameKeyInObject _ _ other = other
+
+-- updateKeys :: [(String, String)] -> A.Value -> A.Value
+-- updateKeys [] obj = obj
+-- updateKeys ((key, newString) : xs) obj = updateKeys xs (updateKey (T.pack key) (T.pack newString) obj)
 
 --------------- EXISTING DB MESH ---------------
 class MeshState a where

@@ -27,7 +27,7 @@ module EulerHS.KVConnector.Flow
 
 import           EulerHS.Prelude hiding (maximum)
 import           EulerHS.CachedSqlDBQuery (runQuery)
-import           EulerHS.KVConnector.Types (KVConnector(..), MeshConfig, MeshResult, MeshError(..), MeshMeta(..), SecondaryKey(..), tableName, keyMap, Source(..))
+import           EulerHS.KVConnector.Types (KVConnector(..), MeshConfig, MeshResult, MeshError(..), MeshMeta(..), SecondaryKey(..), tableName, keyMap, Source(..), TableMappings(..) )
 import           EulerHS.KVConnector.DBSync (getCreateQuery, getUpdateQuery, getDeleteQuery, getDbDeleteCommandJson, getDbUpdateCommandJson, getDbUpdateCommandJsonWithPrimaryKey, getDbDeleteCommandJsonWithPrimaryKey, DBCommandVersion(..))
 import           EulerHS.KVConnector.InMemConfig.Flow (searchInMemoryCache, pushToInMemConfigStream, fetchRowFromDBAndAlterImc)
 import           EulerHS.KVConnector.InMemConfig.Types (ImcStreamCommand(..))
@@ -37,7 +37,6 @@ import           Control.Arrow ((>>>))
 import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy as BSL
 import           Data.List (maximum)
-import           Data.Maybe (listToMaybe)
 import qualified Data.Text as T
 import qualified EulerHS.Language as L
 import qualified Data.HashMap.Strict as HM
@@ -63,6 +62,7 @@ createWoReturingKVConnector :: forall (table :: (Type -> Type) -> Type) be m beM
     BeamRunner beM,
     B.HasQBuilder be,
     FromJSON (table Identity),
+    TableMappings(table Identity),
     ToJSON (table Identity),
     Serialize.Serialize (table Identity),
     Show (table Identity),
@@ -95,6 +95,7 @@ createWithKVConnector ::
     BeamRuntime be beM,
     BeamRunner beM,
     B.HasQBuilder be,
+    TableMappings (table Identity),
     FromJSON (table Identity),
     ToJSON (table Identity),
     Serialize.Serialize (table Identity),
@@ -125,6 +126,7 @@ createWithKVConnector dbConf meshCfg value = do
 createKV :: forall (table :: (Type -> Type) -> Type) m.
   ( FromJSON (table Identity),
     ToJSON (table Identity),
+    TableMappings (table Identity),
     Serialize.Serialize (table Identity),
     Show (table Identity),
     KVConnector (table Identity),
@@ -140,7 +142,7 @@ createKV meshCfg value = do
           shard = getShardedHashTag pKeyText
           pKey = fromString . T.unpack $ pKeyText <> shard
       time <- fromIntegral <$> L.getCurrentDateInMillis
-      let qCmd = getCreateQuery (tableName @(table Identity)) V1 (pKeyText <> shard) time meshCfg.meshDBName val
+      let qCmd = getCreateQuery (tableName @(table Identity)) V1 (pKeyText <> shard) time meshCfg.meshDBName val (getTableMappings @(table Identity))
       revMappingRes <- mapM (\secIdx -> do
         let sKey = fromString . T.unpack $ secIdx
         _ <- L.runKVDB meshCfg.kvRedis $ L.sadd sKey [pKey]
@@ -169,6 +171,7 @@ updateWoReturningWithKVConnector :: forall be table beM m.
     SqlReturning beM be,
     Model be table,
     MeshMeta be table,
+    TableMappings (table Identity),
     B.HasQBuilder be,
     KVConnector (table Identity),
     FromJSON (table Identity),
@@ -210,6 +213,7 @@ updateWithKVConnector :: forall table m.
     Model BP.Postgres table,
     MeshMeta BP.Postgres table,
     B.HasQBuilder BP.Postgres,
+    TableMappings (table Identity),
     KVConnector (table Identity),
     FromJSON (table Identity),
     ToJSON (table Identity),
@@ -251,6 +255,7 @@ modifyOneKV :: forall be table beM m.
     MeshMeta be table,
     B.HasQBuilder be,
     KVConnector (table Identity),
+    TableMappings (table Identity),
     ToJSON (table Identity),
     FromJSON (table Identity),
     Show (table Identity),
@@ -389,6 +394,7 @@ updateObjectRedis :: forall beM be table m.
     BeamRunner beM,
     Model be table,
     MeshMeta be table,
+    TableMappings (table Identity),
     B.HasQBuilder be,
     KVConnector (table Identity),
     FromJSON (table Identity),
@@ -411,7 +417,7 @@ updateObjectRedis meshCfg updVals addPrimaryKeyToWhereClause whereClause obj = d
           updateCmd = if addPrimaryKeyToWhereClause
                         then getDbUpdateCommandJsonWithPrimaryKey (tableName @(table Identity)) updVals obj whereClause
                         else getDbUpdateCommandJson (tableName @(table Identity)) updVals whereClause
-          qCmd      = getUpdateQuery V1 (pKeyText <> shard) time meshCfg.meshDBName updateCmd
+          qCmd      = getUpdateQuery V1 (pKeyText <> shard) time meshCfg.meshDBName updateCmd (getTableMappings @(table Identity))
       case resultToEither $ A.fromJSON updatedModel of
         Right value -> do
           let olderSkeys = map (\(SKey s) -> s) (secondaryKeysFiltered obj)
@@ -489,6 +495,7 @@ updateAllReturningWithKVConnector :: forall table m.
     KVConnector (table Identity),
     FromJSON (table Identity),
     ToJSON (table Identity),
+    TableMappings (table Identity),
     Serialize.Serialize (table Identity),
     Show (table Identity), --debugging purpose
     L.MonadFlow m, MonadIO m
@@ -527,6 +534,7 @@ updateAllWithKVConnector :: forall be table beM m.
     Model be table,
     MeshMeta be table,
     B.HasQBuilder be,
+    TableMappings (table Identity),
     KVConnector (table Identity),
     FromJSON (table Identity),
     ToJSON (table Identity),
@@ -572,6 +580,7 @@ updateKVAndDBResults :: forall be table beM m.
     BeamRunner beM,
     Model be table,
     MeshMeta be table,
+    TableMappings (table Identity),
     B.HasQBuilder be,
     KVConnector (table Identity),
     FromJSON (table Identity),
@@ -927,7 +936,7 @@ findAllWithKVConnector dbConf meshCfg whereClause = do
           let matchedKVLiveRows = findAllMatching whereClause (fst kvRows)
           dbRes <- runQuery dbConf findAllQuery
           case dbRes of
-            Right dbRows -> pure $ Right $ matchedKVLiveRows ++ getUniqueDBRes dbRows (fst kvRows ++ snd kvRows)
+            Right dbRows -> pure $ Right $ matchedKVLiveRows ++ (getUniqueDBRes dbRows (fst kvRows ++ snd kvRows))
             Left err     -> return $ Left $ MDBError err
         Left err -> return $ Left err
     else do
@@ -1035,7 +1044,7 @@ deleteObjectRedis :: forall table be beM m.
     -- Show (table Identity), --debugging purpose
     L.MonadFlow m
   ) =>
-  MeshConfig -> Bool -> Where be table -> table Identity -> m (MeshResult (table Identity))
+  MeshConfig -> Bool -> Where be table -> (table Identity) -> m (MeshResult (table Identity))
 deleteObjectRedis meshCfg addPrimaryKeyToWhereClause whereClause obj = do
   time <- fromIntegral <$> L.getCurrentDateInMillis
   let pKeyText  = getLookupKeyByPKey obj
@@ -1094,6 +1103,7 @@ deleteWithKVConnector :: forall be table beM m.
     MeshMeta be table,
     B.HasQBuilder be,
     KVConnector (table Identity),
+    TableMappings (table Identity),
     ToJSON (table Identity),
     FromJSON (table Identity),
     Show (table Identity),
@@ -1137,6 +1147,7 @@ deleteReturningWithKVConnector :: forall be table beM m.
     KVConnector (table Identity),
     ToJSON (table Identity),
     FromJSON (table Identity),
+    TableMappings (table Identity),
     Show (table Identity),
     Serialize.Serialize (table Identity),
     L.MonadFlow m, B.HasQBuilder be, BeamRunner beM, MonadIO m) =>
@@ -1171,6 +1182,7 @@ deleteAllReturningWithKVConnector :: forall be table beM m.
     MeshMeta be table,
     B.HasQBuilder be,
     KVConnector (table Identity),
+    TableMappings (table Identity),
     ToJSON (table Identity),
     FromJSON (table Identity),
     Show (table Identity),
