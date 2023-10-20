@@ -45,16 +45,20 @@ getCreateQuery model cmdVersion tag timestamp dbName dbObject mappings = do
     , "tag" .= ("Create" :: Text)
     ]
 -- | This will take updateCommand from getDbUpdateCommandJson and returns Aeson value of Update DBCommand
-getUpdateQuery :: DBCommandVersion -> Tag -> Double -> DBName -> A.Value -> [(String, String)] -> A.Value
-getUpdateQuery cmdVersion tag timestamp dbName updateCommand mappings = A.object
+getUpdateQuery :: DBCommandVersion -> Tag -> Double -> DBName -> A.Value -> [(String, String)] -> A.Value -> A.Value
+getUpdateQuery cmdVersion tag timestamp dbName updateCommand mappings updatedModel = A.object
     [ "contents" .= A.toJSON
         [ A.toJSON cmdVersion
         , A.toJSON tag
         , A.toJSON timestamp
         , A.toJSON dbName
+        , A.object
+            [ "contents" .= toJSON updatedModel,
+              "mappings" .= A.toJSON (HM.fromList mappings),
+              "tag" .= ("Updated" :: Text)
+            ]
         , updateCommand
         ]
-    , "mappings".= HM.fromList mappings
     , "tag" .= ("Update" :: Text)
     ]
 
