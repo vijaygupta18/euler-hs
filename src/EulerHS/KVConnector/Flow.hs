@@ -936,7 +936,7 @@ findAllWithKVConnector dbConf meshCfg whereClause = do
           let matchedKVLiveRows = findAllMatching whereClause (fst kvRows)
           dbRes <- runQuery dbConf findAllQuery
           case dbRes of
-            Right dbRows -> pure $ Right $ matchedKVLiveRows ++ (getUniqueDBRes dbRows (fst kvRows ++ snd kvRows))
+            Right dbRows -> pure $ Right $ matchedKVLiveRows ++ getUniqueDBRes dbRows (fst kvRows ++ snd kvRows)
             Left err     -> return $ Left $ MDBError err
         Left err -> return $ Left err
     else do
@@ -1035,6 +1035,7 @@ deleteObjectRedis :: forall table be beM m.
     BeamRuntime be beM,
     BeamRunner beM,
     Model be table,
+    TableMappings (table Identity),
     MeshMeta be table,
     B.HasQBuilder be,
     KVConnector (table Identity),
@@ -1053,7 +1054,8 @@ deleteObjectRedis meshCfg addPrimaryKeyToWhereClause whereClause obj = do
       deleteCmd = if addPrimaryKeyToWhereClause
                     then getDbDeleteCommandJsonWithPrimaryKey (tableName @(table Identity)) obj whereClause
                     else getDbDeleteCommandJson (tableName @(table Identity)) whereClause
-      qCmd      = getDeleteQuery V1 (pKeyText <> shard) time meshCfg.meshDBName deleteCmd
+      
+      qCmd      = getDeleteQuery V1 (pKeyText <> shard) time meshCfg.meshDBName deleteCmd (getTableMappings @(table Identity))
   kvDbRes <- L.runKVDB meshCfg.kvRedis $ L.multiExecWithHash (encodeUtf8 shard) $ do
     _ <- L.xaddTx
           (encodeUtf8 (meshCfg.ecRedisDBStream <> shard))

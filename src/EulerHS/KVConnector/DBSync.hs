@@ -52,13 +52,10 @@ getUpdateQuery cmdVersion tag timestamp dbName updateCommand mappings updatedMod
         , A.toJSON tag
         , A.toJSON timestamp
         , A.toJSON dbName
-        , A.object
-            [ "contents" .= toJSON updatedModel,
-              "mappings" .= A.toJSON (HM.fromList mappings),
-              "tag" .= ("Updated" :: Text)
-            ]
         , updateCommand
         ]
+    , "mappings" .= A.toJSON (HM.fromList mappings)
+    , "updatedModel" .= A.toJSON updatedModel
     , "tag" .= ("Update" :: Text)
     ]
 
@@ -68,7 +65,6 @@ getDbUpdateCommandJson model upd whereClause = A.object
       [ updValToJSON . (toPSJSON @be @table) <$> upd
       , [whereClauseToJson whereClause]
       ]
-  , "updates" .= (HM.fromList upd)
   , "tag" .= ((T.pack . pascal . T.unpack) model <> "Options")
   ]
 
@@ -78,7 +74,6 @@ getDbUpdateCommandJsonWithPrimaryKey model upd table whereClause = A.object
       [ updValToJSON . (toPSJSON @be @table) <$> upd
       , [(whereClauseJsonWithPrimaryKey @be) table $ whereClauseToJson whereClause]
       ]
-  , "updates" .= (HM.fromList upd)
   , "tag" .= ((T.pack . pascal . T.unpack) model <> "Options")
   ]
 
@@ -102,8 +97,8 @@ whereClauseJsonWithPrimaryKey table whereClause =
     modifyKeyValue :: (Text, A.Value) -> A.Value
     modifyKeyValue (key, value) = A.toJSON $ AKM.singleton (AKey.fromText key) (snd $ (toPSJSON @be @table) (key, value))
 
-getDeleteQuery :: DBCommandVersion -> Tag -> Double -> DBName -> A.Value -> A.Value
-getDeleteQuery cmdVersion tag timestamp dbName deleteCommand = A.object
+getDeleteQuery :: DBCommandVersion -> Tag -> Double -> DBName -> A.Value -> [(String, String)]  -> A.Value
+getDeleteQuery cmdVersion tag timestamp dbName deleteCommand mappings = A.object
   [ "contents" .= A.toJSON
       [ A.toJSON cmdVersion
       , A.toJSON tag
@@ -111,6 +106,7 @@ getDeleteQuery cmdVersion tag timestamp dbName deleteCommand = A.object
       , A.toJSON dbName
       , deleteCommand
       ]
+  , "mappings" .= A.toJSON (HM.fromList mappings)
   , "tag" .= ("Delete" :: Text)
   ]
 

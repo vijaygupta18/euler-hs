@@ -49,17 +49,6 @@ class KVConnector table where
 class TableMappings a where
   getTableMappings :: [(String,String)]
 
--- updateKey :: Text -> Text -> A.Value -> A.Value
--- updateKey oldKey newKey (A.Object obj) =
---   case HM.lookup oldKey obj of
---     Just value ->
---       A.Object $ HM.insert newKey value (HM.delete oldKey obj)
---     Nothing -> A.Object obj
--- renameKeyInObject _ _ other = other
-
--- updateKeys :: [(String, String)] -> A.Value -> A.Value
--- updateKeys [] obj = obj
--- updateKeys ((key, newString) : xs) obj = updateKeys xs (updateKey (T.pack key) (T.pack newString) obj)
 
 --------------- EXISTING DB MESH ---------------
 class MeshState a where
