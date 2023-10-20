@@ -415,7 +415,7 @@ updateObjectRedis meshCfg updVals addPrimaryKeyToWhereClause whereClause obj = d
           updateCmd = if addPrimaryKeyToWhereClause 
                         then getDbUpdateCommandJsonWithPrimaryKey (tableName @(table Identity)) updVals obj whereClause
                         else getDbUpdateCommandJson (tableName @(table Identity)) updVals whereClause
-          qCmd      = getUpdateQuery V1 (pKeyText <> shard) time meshCfg.meshDBName updateCmd (getTableMappings @(table Identity))
+          qCmd      = getUpdateQuery V1 (pKeyText <> shard) time meshCfg.meshDBName updateCmd (getTableMappings @(table Identity)) updatedModel
       case resultToEither $ A.fromJSON updatedModel of
         Right value -> do
           let olderSkeys = map (\(SKey s) -> s) (secondaryKeysFiltered obj)
