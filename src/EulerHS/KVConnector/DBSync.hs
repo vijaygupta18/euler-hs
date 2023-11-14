@@ -37,7 +37,7 @@ getCreateQuery model cmdVersion tag timestamp dbName dbObject mappings = do
         , A.toJSON timestamp
         , A.toJSON dbName
         , A.object
-            [ "contents" .= toJSON dbObject,
+            [ "contents" .= dbObject,
               "mappings" .= A.toJSON (HM.fromList mappings),
               "tag" .= ((T.pack . pascal . T.unpack) model <> "Object")
             ]
