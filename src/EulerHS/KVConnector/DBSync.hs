@@ -6,7 +6,7 @@
 module EulerHS.KVConnector.DBSync where
 
 import           EulerHS.Prelude
-import           EulerHS.KVConnector.Types (KVConnector, MeshMeta(..))
+import           EulerHS.KVConnector.Types (KVConnector (mkSQLObject), MeshMeta(..))
 import           EulerHS.KVConnector.Utils (getPKeyAndValueList, meshModelTableEntityDescriptor, toPSJSON)
 import qualified Data.Aeson as A
 import           Data.Aeson ((.=))
@@ -28,7 +28,7 @@ type DBName = Text
 data DBCommandVersion = V1
   deriving (Generic, Show, ToJSON, FromJSON)
 
-getCreateQuery :: (ToJSON (table Identity)) => Text -> DBCommandVersion -> Tag -> Double -> DBName -> table Identity -> [(String, String)] -> A.Value
+getCreateQuery :: (ToJSON (table Identity), KVConnector (table Identity)) => Text -> DBCommandVersion -> Tag -> Double -> DBName -> table Identity -> [(String, String)] -> A.Value
 getCreateQuery model cmdVersion tag timestamp dbName dbObject mappings = do
   A.object
     [ "contents" .= A.toJSON
@@ -38,6 +38,7 @@ getCreateQuery model cmdVersion tag timestamp dbName dbObject mappings = do
         , A.toJSON dbName
         , A.object
             [ "contents" .= dbObject,
+              "contents_v2" .= mkSQLObject dbObject,
               "mappings" .= A.toJSON (HM.fromList mappings),
               "tag" .= ((T.pack . pascal . T.unpack) model <> "Object")
             ]
