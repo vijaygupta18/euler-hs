@@ -57,6 +57,8 @@ class MeshState a where
   getKVDirtyKey     :: a -> Maybe Text
   isDBMeshEnabled   :: a -> Bool
 
+data ContentsVersion = ContentsV1 | ContentsV2
+
 class MeshMeta be table where
   meshModelFieldModification :: table (FieldModification (TableField table))
   valueMapper :: Map.Map Text (A.Value -> A.Value)
