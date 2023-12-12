@@ -29,7 +29,6 @@ type DBName = Text
 data DBCommandVersion = V1
   deriving (Generic, Show, ToJSON, FromJSON)
 
--- FIXME the same format as for update/delete, cmdVersion should be V2
 getCreateQuery :: (ToJSON (table Identity), KVConnector (table Identity)) => Text -> DBCommandVersion -> Tag -> Double -> DBName -> table Identity -> [(String, String)] -> A.Value
 getCreateQuery model cmdVersion tag timestamp dbName dbObject mappings = do
   A.object
@@ -40,11 +39,20 @@ getCreateQuery model cmdVersion tag timestamp dbName dbObject mappings = do
         , A.toJSON dbName
         , A.object
             [ "contents" .= dbObject,
-              "contents_v2" .= mkSQLObject dbObject,
-              "mappings" .= A.toJSON (AKM.fromList $ (\(k, v) -> (AKey.fromText $ T.pack k, v)) <$> mappings),
               "tag" .= ((T.pack . pascal . T.unpack) model <> "Object")
             ]
         ]
+    , "contents_v2" .= A.object
+        [  "cmdVersion" .= cmdVersion
+        ,  "tag" .= tag
+        ,  "timestamp" .= timestamp
+        ,  "dbName" .= dbName
+        ,  "command" .= A.object
+            [ "contents" .= mkSQLObject dbObject,
+              "tag" .= ((T.pack . pascal . T.unpack) model <> "Object")
+            ]
+        ]
+    , "mappings" .= A.toJSON (AKM.fromList $ (\(k, v) -> (AKey.fromText $ T.pack k, v)) <$> mappings)
     , "tag" .= ("Create" :: Text)
     ]
 
@@ -63,7 +71,7 @@ getUpdateQuery cmdVersion tag timestamp dbName updateCommand updateCommandV2 map
         ,  "tag" .= tag
         ,  "timestamp" .= timestamp
         ,  "dbName" .= dbName
-        ,  "updateCommand" .= updateCommandV2
+        ,  "command" .= updateCommandV2
         ]
     , "mappings" .= A.toJSON (AKM.fromList $ (\(k, v) -> (AKey.fromText $ T.pack k, v)) <$> mappings)
     , "updatedModel" .= A.toJSON updatedModel
@@ -129,7 +137,7 @@ getDeleteQuery cmdVersion tag timestamp dbName deleteCommand deleteCommandV2 map
       ,  "tag" .= tag
       ,  "timestamp" .= timestamp
       ,  "dbName" .= dbName
-      ,  "deleteCommand" .= deleteCommandV2
+      ,  "command" .= deleteCommandV2
       ]
   , "mappings" .= A.toJSON (AKM.fromList $ (\(k, v) -> (AKey.fromText $ T.pack k, v)) <$> mappings)
   , "tag" .= ("Delete" :: Text)
