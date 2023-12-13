@@ -249,11 +249,13 @@ secondaryKeysFiltered table = filter filterEmptyValues (secondaryKeys table)
 applyFPair :: (t -> b) -> (t, t) -> (b, b)
 applyFPair f (x, y) = (f x, f y)
 
-getPKeyAndValueList :: forall table. (HasCallStack, KVConnector (table Identity), A.ToJSON (table Identity)) => table Identity -> [(Text, A.Value)]
-getPKeyAndValueList table = do
+getPKeyAndValueList :: forall table. (HasCallStack, KVConnector (table Identity), A.ToJSON (table Identity)) => ContentsVersion -> table Identity -> [(Text, A.Value)]
+getPKeyAndValueList version table = do
   let (PKey k) = primaryKey table
       keyValueList = sortBy (compare `on` fst) k
-      rowObject = A.toJSON table
+      rowObject = case version of
+        ContentsV1 -> A.toJSON table
+        ContentsV2 -> mkSQLObject table
   case rowObject of
     A.Object hm -> DL.foldl' (\acc x -> (go hm x) : acc) [] keyValueList
     _ -> error "Cannot work on row that isn't an Object"

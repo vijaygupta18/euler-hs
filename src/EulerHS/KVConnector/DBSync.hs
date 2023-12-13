@@ -110,7 +110,7 @@ whereClauseJsonWithPrimaryKey version table whereClause = do
       let mbClause = AKM.lookup clauseContentsField o
       in case mbClause of
           Just clause ->
-            let pKeyValueList = getPKeyAndValueList table
+            let pKeyValueList = getPKeyAndValueList version table
                 modifiedKeyValueList = modifyKeyValue <$> pKeyValueList
                 andOfKeyValueList = A.toJSON $ AKM.singleton "$and" $ A.toJSON modifiedKeyValueList
                 modifiedClause = A.toJSON $ AKM.singleton "$and" $ A.toJSON [clause, andOfKeyValueList]
