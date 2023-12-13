@@ -23,7 +23,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified EulerHS.KVConnector.Encoding as Encoding
 import           EulerHS.KVConnector.Metrics (incrementMetric, KVMetric(..))
-import           EulerHS.KVConnector.Types (ContentsVersion (..), MeshMeta(..), MeshResult, MeshError(..), MeshConfig, KVConnector(..), PrimaryKey(..), SecondaryKey(..),
+import           EulerHS.KVConnector.Types (DBCommandVersion' (..), MeshMeta(..), MeshResult, MeshError(..), MeshConfig, KVConnector(..), PrimaryKey(..), SecondaryKey(..),
                     DBLogEntry(..), Operation(..), Source(..), MerchantID(..))
 import qualified EulerHS.Language as L
 import           EulerHS.Types (ApiTag(..))
@@ -46,19 +46,19 @@ import           Sequelize.SQLObject (ToSQLObject (..))
 
 jsonKeyValueUpdates ::
   forall be table. (HasCallStack, Model be table, MeshMeta be table)
-  => ContentsVersion -> [Set be table] -> [(Text, A.Value)]
+  => DBCommandVersion' -> [Set be table] -> [(Text, A.Value)]
 jsonKeyValueUpdates version = fmap (jsonSet version)
 
 jsonSet ::
   forall be table.
   (HasCallStack, Model be table, MeshMeta be table) =>
-  ContentsVersion -> Set be table -> (Text, A.Value)
-jsonSet ContentsV1 (Set column value) = (key, modifiedValue)
+  DBCommandVersion' -> Set be table -> (Text, A.Value)
+jsonSet V1' (Set column value) = (key, modifiedValue)
   where
     key = B._fieldName . fromColumnar' . column . columnize $
       B.dbTableSettings (meshModelTableEntityDescriptor @table @be)
     modifiedValue = A.toJSON value
-jsonSet ContentsV2 (Set column value) = (key, modifiedValue)
+jsonSet V2 (Set column value) = (key, modifiedValue)
   where
     key = B._fieldName . fromColumnar' . column . columnize $
       B.dbTableSettings (meshModelTableEntityDescriptor @table @be)
@@ -161,13 +161,13 @@ secondaryKeysFiltered table = filter filterEmptyValues (secondaryKeys table)
 applyFPair :: (t -> b) -> (t, t) -> (b, b)
 applyFPair f (x, y) = (f x, f y)
 
-getPKeyAndValueList :: forall table. (HasCallStack, KVConnector (table Identity), A.ToJSON (table Identity)) => ContentsVersion -> table Identity -> [(Text, A.Value)]
+getPKeyAndValueList :: forall table. (HasCallStack, KVConnector (table Identity), A.ToJSON (table Identity)) => DBCommandVersion' -> table Identity -> [(Text, A.Value)]
 getPKeyAndValueList version table = do
   let (PKey k) = primaryKey table
       keyValueList = sortBy (compare `on` fst) k
       rowObject = case version of
-        ContentsV1 -> A.toJSON table
-        ContentsV2 -> mkSQLObject table
+        V1' -> A.toJSON table
+        V2 -> mkSQLObject table
   case rowObject of
     A.Object hm -> DL.foldl' (\acc x -> (go hm x) : acc) [] keyValueList
     _ -> error "Cannot work on row that isn't an Object"

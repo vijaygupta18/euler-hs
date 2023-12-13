@@ -34,6 +34,13 @@ import qualified EulerHS.Types as T
 import           Data.Aeson ((.=))
 ------------ TYPES AND CLASSES ------------
 
+-- toJSON V1 = [] this is how aeson works, so if we add V2 here, it will be not backward compatible
+data DBCommandVersion = V1
+  deriving (Generic, Show, ToJSON, FromJSON)
+
+data DBCommandVersion' = V1' | V2
+  deriving (Generic, Show, ToJSON, FromJSON)
+
 data PrimaryKey = PKey [(Text,Text)]
 data SecondaryKey = SKey [(Text,Text)]
 
@@ -56,8 +63,6 @@ class MeshState a where
   getKVKey          :: a -> Maybe Text
   getKVDirtyKey     :: a -> Maybe Text
   isDBMeshEnabled   :: a -> Bool
-
-data ContentsVersion = ContentsV1 | ContentsV2
 
 class MeshMeta be table where
   meshModelFieldModification :: table (FieldModification (TableField table))
