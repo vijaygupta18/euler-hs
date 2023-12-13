@@ -1103,14 +1103,14 @@
       "locked": {
         "lastModified": 1702897959,
         "narHash": "sha256-uhv/uKOwu1IfFnYyFFB4k5dMrYcorjs1DCd6ehm9ReA=",
-        "owner": "roman-bodavskiy",
+        "owner": "vijaygupta18",
         "repo": "haskell-sequelize",
         "rev": "b109d29f46b611cd5ff7e0d09aead48076871210",
         "type": "github"
       },
       "original": {
-        "owner": "juspay",
-        "ref": "beckn-compatible",
+        "owner": "vijaygupta18",
+        "ref": "decouple-drainer-from-app",
         "repo": "haskell-sequelize",
         "type": "github"
       }

@@ -26,9 +26,15 @@ module EulerHS.KVConnector.Flow
  where
 
 import           EulerHS.Prelude hiding (maximum)
-import           EulerHS.CachedSqlDBQuery (runQuery)
-import           EulerHS.KVConnector.Types (ContentsVersion (..), KVConnector(..), MeshConfig, MeshResult, MeshError(..), MeshMeta(..), SecondaryKey(..), tableName, keyMap, Source(..), TableMappings(..))
-import           EulerHS.KVConnector.DBSync (getCreateQuery, getUpdateQuery, getDeleteQuery, getDbDeleteCommandJson, getDbUpdateCommandJson, getDbUpdateCommandJsonWithPrimaryKey, getDbDeleteCommandJsonWithPrimaryKey, DBCommandVersion(..))
+import EulerHS.CachedSqlDBQuery
+    ( runQuery,
+      findAllSql,
+      createReturning,
+      createSqlWoReturing,
+      updateOneSqlWoReturning,
+      SqlReturning(..) )
+import           EulerHS.KVConnector.Types (DBCommandVersion' (..), KVConnector(..), MeshConfig, MeshResult, MeshError(..), MeshMeta(..), SecondaryKey(..), tableName, keyMap, Source(..), TableMappings(..))
+import           EulerHS.KVConnector.DBSync (getCreateQuery, getUpdateQuery, getDeleteQuery, getDbDeleteCommandJson, getDbUpdateCommandJson, getDbUpdateCommandJsonWithPrimaryKey, getDbDeleteCommandJsonWithPrimaryKey)
 import           EulerHS.KVConnector.InMemConfig.Flow (searchInMemoryCache, pushToInMemConfigStream, fetchRowFromDBAndAlterImc)
 import           EulerHS.KVConnector.InMemConfig.Types (ImcStreamCommand(..))
 import           EulerHS.KVConnector.Utils
@@ -43,7 +49,6 @@ import qualified Data.HashMap.Strict as HM
 import           EulerHS.SqlDB.Types (BeamRunner, BeamRuntime, DBConfig, DBError)
 import qualified EulerHS.SqlDB.Language as DB
 import           Sequelize (fromColumnar', columnize, sqlSelect, sqlSelect', sqlUpdate, sqlDelete, Model, Where, Clause(..), Set(..), OrderBy(..))
-import           EulerHS.CachedSqlDBQuery (findAllSql, createReturning, createSqlWoReturing, updateOneSqlWoReturning, SqlReturning(..))
 import qualified Database.Beam as B
 import qualified Database.Beam.Postgres as BP
 import           Data.Either.Extra (mapRight, mapLeft)
@@ -142,7 +147,7 @@ createKV meshCfg value = do
           shard = getShardedHashTag pKeyText
           pKey = fromString . T.unpack $ pKeyText <> shard
       time <- fromIntegral <$> L.getCurrentDateInMillis
-      let qCmd = getCreateQuery (tableName @(table Identity)) V1 (pKeyText <> shard) time meshCfg.meshDBName val (getTableMappings @(table Identity))
+      let qCmd = getCreateQuery (tableName @(table Identity)) (pKeyText <> shard) time meshCfg.meshDBName val (getTableMappings @(table Identity))
       revMappingRes <- mapM (\secIdx -> do
         let sKey = fromString . T.unpack $ secIdx
         _ <- L.runKVDB meshCfg.kvRedis $ L.sadd sKey [pKey]
@@ -270,7 +275,7 @@ modifyOneKV :: forall be table beM m.
   m (Source, MeshResult (Maybe (table Identity)))
 modifyOneKV dbConf meshCfg whereClause mbSetClause updateWoReturning isLive = do
   let setClause = fromMaybe [] mbSetClause
-      updVals = jsonKeyValueUpdates ContentsV1 setClause
+      updVals = jsonKeyValueUpdates V1' setClause
   kvResult <- findOneFromRedis meshCfg whereClause
   case kvResult of
     Right ([], []) -> updateInKVOrSQL Nothing updVals setClause
@@ -417,7 +422,7 @@ updateObjectRedis meshCfg updVals setClauses addPrimaryKeyToWhereClause whereCla
           mkUpdateCmd version = if addPrimaryKeyToWhereClause
                         then getDbUpdateCommandJsonWithPrimaryKey version (tableName @(table Identity)) setClauses obj whereClause
                         else getDbUpdateCommandJson version (tableName @(table Identity)) setClauses whereClause
-          qCmd      = getUpdateQuery V1 (pKeyText <> shard) time meshCfg.meshDBName (mkUpdateCmd ContentsV1) (mkUpdateCmd ContentsV2) (getTableMappings @(table Identity)) updatedModel
+          qCmd      = getUpdateQuery (pKeyText <> shard) time meshCfg.meshDBName (mkUpdateCmd V1') (mkUpdateCmd V2) (getTableMappings @(table Identity)) updatedModel
       case resultToEither $ A.fromJSON updatedModel of
         Right value -> do
           let olderSkeys = map (\(SKey s) -> s) (secondaryKeysFiltered obj)
@@ -509,7 +514,7 @@ updateAllReturningWithKVConnector dbConf meshCfg setClause whereClause = do
   let isDisabled = meshCfg.kvHardKilled
   res <- if not isDisabled
     then do
-      let updVals = jsonKeyValueUpdates ContentsV1 setClause
+      let updVals = jsonKeyValueUpdates V1' setClause
       kvRows <- redisFindAll meshCfg whereClause
       dbRows <- findAllSql dbConf whereClause
       updateKVAndDBResults meshCfg whereClause dbRows kvRows (Just updVals) False dbConf (Just setClause) True
@@ -551,7 +556,7 @@ updateAllWithKVConnector dbConf meshCfg setClause whereClause = do
   let isDisabled = meshCfg.kvHardKilled
   res <- if not isDisabled
     then do
-      let updVals = jsonKeyValueUpdates ContentsV1 setClause
+      let updVals = jsonKeyValueUpdates V1' setClause
       kvRows <- redisFindAll meshCfg whereClause
       dbRows <- findAllSql dbConf whereClause
       mapRight (const ()) <$> updateKVAndDBResults meshCfg whereClause dbRows kvRows (Just updVals) True dbConf (Just setClause) True
@@ -759,7 +764,7 @@ findOneFromRedis meshCfg whereClause = do
   case foldEither eitherKeyRes of
     Right keyRes -> do
       latencyLogging <- liftIO $ fromMaybe False . (>>= readMaybe) <$> SE.lookupEnv "logRedisLatency"
-      allRowsRes <- foldEither <$> mapM (getDataFromPKeysRedis meshCfg latencyLogging) (mkUniq keyRes) 
+      allRowsRes <- foldEither <$> mapM (getDataFromPKeysRedis meshCfg latencyLogging) (mkUniq keyRes)
       case allRowsRes of
         Right allRowsResPairList -> do
           let (allRowsResLiveListOfList, allRowsResDeadListOfList) = unzip allRowsResPairList
@@ -973,12 +978,12 @@ findAllWithKVAndConditionalDBInternal dbConf meshCfg whereClause orderBy = do
               case orderBy of
                   Nothing -> pure $ Right matchedKVLiveRows
                   Just res -> do
-                    let cmp = case res of 
+                    let cmp = case res of
                           Asc col -> compareCols (fromColumnar' . col . columnize) True
                           Desc col -> compareCols (fromColumnar' . col . columnize) False
                     pure $ Right (sortBy cmp matchedKVLiveRows)
             else do
-              let findAllQueryUpdated = DB.findRows (sqlSelect' 
+              let findAllQueryUpdated = DB.findRows (sqlSelect'
                       ! #where_ whereClause
                       ! #orderBy (if isJust orderBy then Just [DMaybe.fromJust orderBy] else Nothing)
                       ! defaults)
@@ -988,7 +993,7 @@ findAllWithKVAndConditionalDBInternal dbConf meshCfg whereClause orderBy = do
                 Left err     -> return $ Left $ MDBError err
         Left err -> return $ Left err
     else do
-      let findAllQuery = DB.findRows (sqlSelect' 
+      let findAllQuery = DB.findRows (sqlSelect'
               ! #where_ whereClause
               ! #orderBy (if isJust orderBy then Just [DMaybe.fromJust orderBy] else Nothing)
               ! defaults)
@@ -1022,7 +1027,7 @@ redisFindAll meshCfg whereClause = do
   latencyLogging <- liftIO $ fromMaybe False . (>>= readMaybe) <$> SE.lookupEnv "logRedisLatency" -- Just for Testing
   case foldEither eitherKeyRes of
     Right keyRes -> do
-      allRowsRes <- (if flagPipe then foldEither <$> mapM (getDataFromPKeysRedis' meshCfg latencyLogging) (mkUniq keyRes) else foldEither <$> mapM (getDataFromPKeysRedis meshCfg latencyLogging) (mkUniq keyRes)) 
+      allRowsRes <- (if flagPipe then foldEither <$> mapM (getDataFromPKeysRedis' meshCfg latencyLogging) (mkUniq keyRes) else foldEither <$> mapM (getDataFromPKeysRedis meshCfg latencyLogging) (mkUniq keyRes))
       case allRowsRes of
         Right allRowsResPairList -> do
           let (allRowsResLiveListOfList, allRowsResDeadListOfList) = unzip allRowsResPairList
@@ -1054,8 +1059,8 @@ deleteObjectRedis meshCfg addPrimaryKeyToWhereClause whereClause obj = do
       mkDeleteCmd version = if addPrimaryKeyToWhereClause
                     then getDbDeleteCommandJsonWithPrimaryKey version (tableName @(table Identity)) obj whereClause
                     else getDbDeleteCommandJson version (tableName @(table Identity)) whereClause
-      
-      qCmd      = getDeleteQuery V1 (pKeyText <> shard) time meshCfg.meshDBName (mkDeleteCmd ContentsV1) (mkDeleteCmd ContentsV2) (getTableMappings @(table Identity))
+
+      qCmd      = getDeleteQuery (pKeyText <> shard) time meshCfg.meshDBName (mkDeleteCmd V1') (mkDeleteCmd V2) (getTableMappings @(table Identity))
   kvDbRes <- L.runKVDB meshCfg.kvRedis $ L.multiExecWithHash (encodeUtf8 shard) $ do
     _ <- L.xaddTx
           (encodeUtf8 (meshCfg.ecRedisDBStream <> shard))
@@ -1065,7 +1070,7 @@ deleteObjectRedis meshCfg addPrimaryKeyToWhereClause whereClause obj = do
   case kvDbRes of
     Left err -> return . Left $ MRedisError err
     Right _  -> do
-      when meshCfg.memcacheEnabled $ pushToInMemConfigStream meshCfg ImcDelete obj 
+      when meshCfg.memcacheEnabled $ pushToInMemConfigStream meshCfg ImcDelete obj
       return $ Right obj
 
 reCacheDBRows :: forall table m.
