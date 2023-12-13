@@ -32,7 +32,15 @@ import           Database.Beam.Schema (FieldModification, TableField)
 import           Sequelize (Column, Set)
 import qualified EulerHS.Types as T
 import           Data.Aeson ((.=))
+import Sequelize.SQLObject (ToSQLObject)
 ------------ TYPES AND CLASSES ------------
+
+-- toJSON V1 = [] this is how aeson works, so if we add V2 here, it will be not backward compatible
+data DBCommandVersion = V1
+  deriving (Generic, Show, ToJSON, FromJSON)
+
+data DBCommandVersion' = V1' | V2
+  deriving (Generic, Show, ToJSON, FromJSON)
 
 data PrimaryKey = PKey [(Text,Text)]
 data SecondaryKey = SKey [(Text,Text)]
@@ -57,8 +65,6 @@ class MeshState a where
   getKVDirtyKey     :: a -> Maybe Text
   isDBMeshEnabled   :: a -> Bool
 
-data ContentsVersion = ContentsV1 | ContentsV2
-
 class MeshMeta be table where
   meshModelFieldModification :: table (FieldModification (TableField table))
   valueMapper :: Map.Map Text (A.Value -> A.Value)
@@ -66,7 +72,7 @@ class MeshMeta be table where
   parseSetClause :: [(Text, A.Value)] -> Parser [Set be table]
 
 data TermWrap be (table :: (* -> *) -> *) where
-  TermWrap :: (B.BeamSqlBackendCanSerialize be a, A.ToJSON a, Ord a, B.HasSqlEqualityCheck be a, Show a)
+  TermWrap :: (B.BeamSqlBackendCanSerialize be a, A.ToJSON a, Ord a, B.HasSqlEqualityCheck be a, Show a,ToSQLObject a)
               => Column table a -> a -> TermWrap be table
 
 type MeshResult a = Either MeshError a

@@ -6,7 +6,7 @@
 module EulerHS.KVConnector.DBSync where
 
 import           EulerHS.Prelude
-import           EulerHS.KVConnector.Types (ContentsVersion (..),  KVConnector (mkSQLObject), MeshMeta(..))
+import           EulerHS.KVConnector.Types (DBCommandVersion (..), DBCommandVersion' (..),  KVConnector (mkSQLObject), MeshMeta(..))
 import           EulerHS.KVConnector.Utils (jsonKeyValueUpdates, getPKeyAndValueList, meshModelTableEntityDescriptor, toPSJSON)
 import qualified Data.Aeson as A
 import           Data.Aeson ((.=))
@@ -25,15 +25,11 @@ type Tag = Text
 
 type DBName = Text
 
--- toJSON V1 = [] this is how aeson works, so if we add V2 here, it will be not backward compatible
-data DBCommandVersion = V1
-  deriving (Generic, Show, ToJSON, FromJSON)
-
-getCreateQuery :: (ToJSON (table Identity), KVConnector (table Identity)) => Text -> DBCommandVersion -> Tag -> Double -> DBName -> table Identity -> [(String, String)] -> A.Value
-getCreateQuery model cmdVersion tag timestamp dbName dbObject mappings = do
+getCreateQuery :: (ToJSON (table Identity), KVConnector (table Identity)) => Text -> Tag -> Double -> DBName -> table Identity -> [(String, String)] -> A.Value
+getCreateQuery model tag timestamp dbName dbObject mappings = do
   A.object
     [ "contents" .= A.toJSON
-        [ A.toJSON cmdVersion
+        [ A.toJSON V1
         , A.toJSON tag
         , A.toJSON timestamp
         , A.toJSON dbName
@@ -43,7 +39,7 @@ getCreateQuery model cmdVersion tag timestamp dbName dbObject mappings = do
             ]
         ]
     , "contents_v2" .= A.object
-        [  "cmdVersion" .= cmdVersion
+        [  "cmdVersion" .= V2
         ,  "tag" .= tag
         ,  "timestamp" .= timestamp
         ,  "dbName" .= dbName
@@ -57,17 +53,17 @@ getCreateQuery model cmdVersion tag timestamp dbName dbObject mappings = do
     ]
 
 -- | This will take updateCommand from getDbUpdateCommandJson and returns Aeson value of Update DBCommand
-getUpdateQuery :: DBCommandVersion -> Tag -> Double -> DBName -> A.Value -> A.Value -> [(String, String)] -> A.Value -> A.Value
-getUpdateQuery cmdVersion tag timestamp dbName updateCommand updateCommandV2 mappings updatedModel = A.object
+getUpdateQuery :: Tag -> Double -> DBName -> A.Value -> A.Value -> [(String, String)] -> A.Value -> A.Value
+getUpdateQuery tag timestamp dbName updateCommand updateCommandV2 mappings updatedModel = A.object
     [ "contents" .= A.toJSON
-        [ A.toJSON cmdVersion
+        [ A.toJSON V1
         , A.toJSON tag
         , A.toJSON timestamp
         , A.toJSON dbName
         , updateCommand
         ]
     , "contents_v2" .= A.object
-        [  "cmdVersion" .= cmdVersion
+        [  "cmdVersion" .= V2
         ,  "tag" .= tag
         ,  "timestamp" .= timestamp
         ,  "dbName" .= dbName
@@ -78,7 +74,7 @@ getUpdateQuery cmdVersion tag timestamp dbName updateCommand updateCommandV2 map
     , "tag" .= ("Update" :: Text)
     ]
 
-getDbUpdateCommandJson :: forall be table. (Model be table, MeshMeta be table) => ContentsVersion -> Text -> [Set be table] -> Where be table -> A.Value
+getDbUpdateCommandJson :: forall be table. (Model be table, MeshMeta be table) => DBCommandVersion' -> Text -> [Set be table] -> Where be table -> A.Value
 getDbUpdateCommandJson version model setClauses whereClause = A.object
   [ "contents" .= A.toJSON
       [ updValToJSON version . (toPSJSON @be @table) <$> upd
@@ -89,7 +85,7 @@ getDbUpdateCommandJson version model setClauses whereClause = A.object
   where
       upd = jsonKeyValueUpdates version setClauses
 
-getDbUpdateCommandJsonWithPrimaryKey :: forall be table. (KVConnector (table Identity), Model be table, MeshMeta be table, A.ToJSON (table Identity)) => ContentsVersion -> Text -> [Set be table] -> table Identity -> Where be table -> A.Value
+getDbUpdateCommandJsonWithPrimaryKey :: forall be table. (KVConnector (table Identity), Model be table, MeshMeta be table, A.ToJSON (table Identity)) => DBCommandVersion' -> Text -> [Set be table] -> table Identity -> Where be table -> A.Value
 getDbUpdateCommandJsonWithPrimaryKey version model setClauses table whereClause = A.object
   [ "contents" .= A.toJSON
       [ updValToJSON version . (toPSJSON @be @table) <$> upd
@@ -100,11 +96,11 @@ getDbUpdateCommandJsonWithPrimaryKey version model setClauses table whereClause 
   where
       upd = jsonKeyValueUpdates version setClauses
 
-whereClauseJsonWithPrimaryKey :: forall be table. (HasCallStack, KVConnector (table Identity), A.ToJSON (table Identity), MeshMeta be table) => ContentsVersion -> table Identity -> A.Value -> A.Value
+whereClauseJsonWithPrimaryKey :: forall be table. (HasCallStack, KVConnector (table Identity), A.ToJSON (table Identity), MeshMeta be table) => DBCommandVersion' -> table Identity -> A.Value -> A.Value
 whereClauseJsonWithPrimaryKey version table whereClause = do
   let clauseContentsField = case version of
-        ContentsV1 -> "value1"
-        ContentsV2 -> "clauseContents"
+        V1' -> "value1"
+        V2 -> "clauseContents"
   case whereClause of
     A.Object o ->
       let mbClause = AKM.lookup clauseContentsField o
@@ -123,17 +119,17 @@ whereClauseJsonWithPrimaryKey version table whereClause = do
     modifyKeyValue :: (Text, A.Value) -> A.Value
     modifyKeyValue (key, value) = A.toJSON $ AKM.singleton (AKey.fromText key) (snd $ (toPSJSON @be @table) (key, value))
 
-getDeleteQuery :: DBCommandVersion -> Tag -> Double -> DBName -> A.Value -> A.Value -> [(String, String)]  -> A.Value
-getDeleteQuery cmdVersion tag timestamp dbName deleteCommand deleteCommandV2 mappings = A.object
+getDeleteQuery :: Tag -> Double -> DBName -> A.Value -> A.Value -> [(String, String)]  -> A.Value
+getDeleteQuery tag timestamp dbName deleteCommand deleteCommandV2 mappings = A.object
   [ "contents" .= A.toJSON
-      [ A.toJSON cmdVersion
+      [ A.toJSON V1
       , A.toJSON tag
       , A.toJSON timestamp
       , A.toJSON dbName
       , deleteCommand
       ]
   , "contents_v2" .= A.object
-      [  "cmdVersion" .= cmdVersion -- FIXME should be V2
+      [  "cmdVersion" .= V2
       ,  "tag" .= tag
       ,  "timestamp" .= timestamp
       ,  "dbName" .= dbName
@@ -143,36 +139,36 @@ getDeleteQuery cmdVersion tag timestamp dbName deleteCommand deleteCommandV2 map
   , "tag" .= ("Delete" :: Text)
   ]
 
-getDbDeleteCommandJson :: forall be table. (Model be table, MeshMeta be table) => ContentsVersion -> Text -> Where be table -> A.Value
+getDbDeleteCommandJson :: forall be table. (Model be table, MeshMeta be table) => DBCommandVersion' -> Text -> Where be table -> A.Value
 getDbDeleteCommandJson version model whereClause = A.object
   [ "contents" .= whereClauseToJson version whereClause
   , "tag" .= ((T.pack . pascal . T.unpack) model <> "Options")
   ]
 
-getDbDeleteCommandJsonWithPrimaryKey :: forall be table. (HasCallStack, KVConnector (table Identity), Model be table, MeshMeta be table, A.ToJSON (table Identity)) => ContentsVersion -> Text -> table Identity -> Where be table -> A.Value
+getDbDeleteCommandJsonWithPrimaryKey :: forall be table. (HasCallStack, KVConnector (table Identity), Model be table, MeshMeta be table, A.ToJSON (table Identity)) => DBCommandVersion' -> Text -> table Identity -> Where be table -> A.Value
 getDbDeleteCommandJsonWithPrimaryKey version model table whereClause = A.object
   [ "contents" .= ((whereClauseJsonWithPrimaryKey @be) version table $ whereClauseToJson version whereClause)
   , "tag" .= ((T.pack . pascal . T.unpack) model <> "Options")
   ]
 
-updValToJSON :: ContentsVersion -> (Text, A.Value) -> A.Value
-updValToJSON ContentsV1 (k, v) = A.object [ "value0" .= k, "value1" .= v ]
-updValToJSON ContentsV2 (k, v) = A.object [ "key" .= k, "value" .= v ]
+updValToJSON :: DBCommandVersion' -> (Text, A.Value) -> A.Value
+updValToJSON V1' (k, v) = A.object [ "value0" .= k, "value1" .= v ]
+updValToJSON V2 (k, v) = A.object [ "key" .= k, "value" .= v ]
 
-whereClauseToJson :: (Model be table, MeshMeta be table) => ContentsVersion -> Where be table -> A.Value
-whereClauseToJson ContentsV1 whereClause = A.object
+whereClauseToJson :: (Model be table, MeshMeta be table) => DBCommandVersion' -> Where be table -> A.Value
+whereClauseToJson V1' whereClause = A.object
     [ "value0" .= ("where" :: Text)
-    , "value1" .= modelEncodeWhere ContentsV1 whereClause
+    , "value1" .= modelEncodeWhere V1' whereClause
     ]
-whereClauseToJson ContentsV2 whereClause = A.object
+whereClauseToJson V2 whereClause = A.object
     [ "clauseTag" .= ("where" :: Text)
-    , "clauseContents" .= modelEncodeWhere ContentsV2 whereClause
+    , "clauseContents" .= modelEncodeWhere V2 whereClause
     ]
 
 modelEncodeWhere ::
   forall be table.
   (Model be table, MeshMeta be table) =>
-  ContentsVersion ->
+  DBCommandVersion' ->
   Where be table ->
   A.Object
 modelEncodeWhere version = encodeWhere version meshModelTableEntityDescriptor
@@ -180,7 +176,7 @@ modelEncodeWhere version = encodeWhere version meshModelTableEntityDescriptor
 encodeWhere ::
   forall be table.
   (B.Beamable table, MeshMeta be table) =>
-  ContentsVersion ->
+  DBCommandVersion' ->
   B.DatabaseEntityDescriptor be (B.TableEntity table) ->
   Where be table ->
   A.Object
@@ -189,7 +185,7 @@ encodeWhere version dt = encodeClause version dt . And
 encodeClause ::
   forall be table.
   (B.Beamable table, MeshMeta be table) =>
-  ContentsVersion ->
+  DBCommandVersion' ->
   B.DatabaseEntityDescriptor be (B.TableEntity table) ->
   Clause be table ->
   A.Object
@@ -214,7 +210,7 @@ encodeClause version dt w =
          in AKM.singleton (AKey.fromText key) $ (encodeTerm @table) version key term
    in foldWhere' w
 
-encodeTerm :: forall table be value. (A.ToJSON value, MeshMeta be table, ToSQLObject value) => ContentsVersion -> Text -> Term be value -> A.Value
+encodeTerm :: forall table be value. (A.ToJSON value, MeshMeta be table, ToSQLObject value) => DBCommandVersion' -> Text -> Term be value -> A.Value
 encodeTerm version key = \case
   In vals -> array "$in" (modifyToPsFormat <$> vals)
   Eq val -> modifyToPsFormat val
@@ -233,8 +229,8 @@ encodeTerm version key = \case
 
   where
     modifyToPsFormat val = case version of
-      ContentsV1 -> snd $ (toPSJSON @be @table) (key, A.toJSON val)
-      ContentsV2 -> snd $ (toPSJSON @be @table) (key, A.toJSON $ convertToSQLObject val)
+      V1' -> snd $ (toPSJSON @be @table) (key, A.toJSON val)
+      V2 -> snd $ (toPSJSON @be @table) (key, A.toJSON $ convertToSQLObject val)
 
 array :: Text -> [A.Value] -> A.Value
 array k vs = A.toJSON $ AKM.singleton (AKey.fromText k) vs
